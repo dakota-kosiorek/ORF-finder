@@ -1,16 +1,22 @@
 # Dakota Kosiorek
-#   ORF and ORF_finder classes to find the open reading frames in a sequence
+#   ORF and ORF_finder classes to find the open reading frames in a DNA sequence
 
-# DNA to RNA
-def transcribe(dna_seq):
-    rna_seq = dna_seq.replace("T", "U")
-    return rna_seq
+import sys
+import os
 
 class ORF_finder:
-    def __init__(self, rna_seq, seq_name, min_ORF_length):
-        self.ORFs = list()
-        self.seq_name = seq_name[1:]
-        self.min_ORF_length = min_ORF_length
+    def __init__(self, filepath, min_orf_length):
+        self.min_orf_length = min_orf_length
+        self.ORFs = {}
+        self.seqs = {}
+        # Get dna_seq and seq_name from file
+        with open(filepath, "r") as my_file:
+            for line in my_file.readlines():
+                if line[0] == ">":
+                    curr_seq_name = line[1:].strip()
+                    self.seqs[curr_seq_name] = ""
+                else:
+                    self.seqs[curr_seq_name] += line.upper().strip()
         
         # Dictionary for codons and their assosiated amino acids
         self.aa = {
@@ -119,20 +125,25 @@ class ORF_finder:
             "Val": "V"
         }
         
-        self.find(rna_seq)
+        for (name, seq) in self.seqs.items():
+            self.ORFs[name] = list()
+            self.find(seq_name=name, dna_seq=seq)
     
-    def find(self, rna_seq):
-        self.orf_cntr = 1
+    def find(self, seq_name, dna_seq):
+        # Get the RNA sequence from the DNA sequence
+        rna_seq = self.transcribe(dna_seq)
+        self.orf_cntr = 1 # -------------------------------------------
         # Reverse complement the RNA sequence
         rev_comp_rna_seq = self.rev_comp(rna_seq)
         
+        orf_cntr= 0
         # Frames 1-3 (+ strand)
-        self.orf_frame(rna_seq, "+")
+        orf_cntr = self.orf_frame(seq_name, rna_seq, "+", orf_cntr)
         # Frames 1-3 (- strand)
-        self.orf_frame(rev_comp_rna_seq, "-")
+        orf_cntr = self.orf_frame(seq_name, rev_comp_rna_seq, "-", orf_cntr)
     
     # Gets the ORFs for a sequence on a strand
-    def orf_frame(self, seq, strand):
+    def orf_frame(self, seq_name, seq, strand, orf_cntr):
         for shift in range(3):
             nt_total = shift
             orf_start = 0
@@ -157,18 +168,18 @@ class ORF_finder:
                         orf_start = len(seq) - orf_start - 1
                         orf_stop = len(seq) - nt_total - 2
                     
-                    if nt_count > self.min_ORF_length:
-                        myORF = ORF(label="ORF" + str(self.orf_cntr), 
+                    if nt_count > self.min_orf_length:
+                        myORF = ORF(label="ORF" + str(orf_cntr), 
                                     strand=strand, 
                                     frame=1+shift, 
                                     location=(orf_start + 1, orf_stop), 
                                     length=(nt_count, aa_count),
-                                    min_ORF_length=self.min_ORF_length,
+                                    min_orf_length=self.min_orf_length,
                                     protein_seq=protein_seq
                         )
-                        # Add ORF to self.ORFs list
-                        self.ORFs.append(myORF)
-                        self.orf_cntr += 1
+                        
+                        self.ORFs[seq_name].append(myORF) # -------------------------------------------
+                        orf_cntr += 1
                     
                     protein_seq = "M"
                     reading = False
@@ -183,7 +194,14 @@ class ORF_finder:
                     protein_seq += self.aa_single[self.aa[codon]]
                 
                 nt_total += 3
+            
+        return orf_cntr
 
+    # DNA to RNA
+    def transcribe(self, dna_seq):
+        rna_seq = dna_seq.replace("T", "U")
+        return rna_seq
+    
     # Reverse compliments the RNA sequence
     def rev_comp(self, seq):
         rev_seq = seq[::-1]
@@ -199,23 +217,27 @@ class ORF_finder:
                 rev_comp_seq += 'G'
         
         return rev_comp_seq
-    
-    def display(self):
-        for orf in self.ORFs:
-            orf.display()
 
-    def save_ORFs(self, file):
-        file.write(f"{self.seq_name}\n")
-        file.write("-------------------\n")
-        for orf in self.ORFs:
-            file.write(f"{orf.label}\n")
-            file.write(f"\tFrame: \t\t\t\t{orf.frame}\n\tStrand: \t\t\t{orf.strand}\n") 
-            file.write(f"\tStart: \t\t\t\t{orf.location[0]}\n\tStop: \t\t\t\t{orf.location[1]}\n")
-            file.write(f"\tLength (nt): \t\t{orf.length[0]}\n\tLength (aa): \t\t{orf.length[1]}\n")
-            file.write(f"\tProtein Sequence: \t{orf.protein_seq}\n\n") 
+    def save_ORFs(self, outputpath):
+        if os.path.exists(outputpath) == False:
+            os.makedirs(outputpath)
+        
+        for seq_name, orf_list in self.ORFs.items():
+            file = open(os.path.join(outputpath, f"{seq_name}.txt"), "w")
+            
+            file.write(f">{seq_name}\n\n")
+            
+            for orf in orf_list:
+                file.write(f"{orf.label}\n")
+                file.write(f"\tFrame: \t\t\t\t{orf.frame}\n\tStrand: \t\t\t{orf.strand}\n") 
+                file.write(f"\tStart: \t\t\t\t{orf.location[0]}\n\tStop: \t\t\t\t{orf.location[1]}\n")
+                file.write(f"\tLength (nt): \t\t{orf.length[0]}\n\tLength (aa): \t\t{orf.length[1]}\n")
+                file.write(f"\tProtein Sequence: \t{orf.protein_seq}\n\n")
+            
+            file.close()
     
 class ORF:
-    def __init__(self, label, strand, frame, location, length, min_ORF_length, protein_seq):
+    def __init__(self, label, strand, frame, location, length, min_orf_length, protein_seq):
         # Name string
         self.label = label
         # What strand the ORF is on (+/-)
@@ -227,7 +249,7 @@ class ORF:
         # ORF length tuple (nucleotide length, amino acid length)
         self.length = length
         # The minimum length each open reading frame should be
-        self.min_ORF_length = min_ORF_length
+        self.min_orf_length = min_orf_length
         # The protein sequence of the ORF
         self.protein_seq = protein_seq
         
@@ -238,3 +260,18 @@ class ORF:
         print(f"\tLength (nt): \t{self.length[0]}\n\tLength (aa): \t{self.length[1]}")
         print(f"\tProtein Sequence: {self.protein_seq}\n") 
 
+def main():
+    try:
+        filepath = sys.argv[1]
+        outputpath = sys.argv[2]
+        min_orf_length = int(sys.argv[3])
+        # Makes sure file is a fasta file
+        if filepath.endswith(".fasta") & os.path.exists(filepath):
+            my_orf = ORF_finder(filepath=filepath, min_orf_length=min_orf_length)
+            if outputpath != "NONE":
+                my_orf.save_ORFs(outputpath)
+    except:
+        print("ERROR: Need to pass the following\n\tArgument 1: fasta file path that leads to a valid fasta file\n\tArgument 2: File ouput location (put 'NONE' if you do not want to save ORFs)\n\tArgument 3: Minimum ORF length")
+
+if __name__ == "__main__":
+    main()
